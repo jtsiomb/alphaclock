@@ -1,6 +1,8 @@
 alphaclock
 ==========
 
+![shot](http://nuclear.mutantstargoat.com/sw/misc/alphaclock.jpg)
+
 About
 -----
 Alphaclock is a transparent clock for the desktop. It renders the time using
