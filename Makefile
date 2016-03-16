@@ -3,7 +3,7 @@ obj = $(src:.cc=.o)
 bin = alphaclock
 
 CXXFLAGS = -std=c++11 -pedantic -Wall -g
-LDFLAGS = -lX11 -lGL -lGLU -lglut -ldrawtext
+LDFLAGS = -lX11 -lGL -ldrawtext
 
 $(bin): $(obj)
 	$(CXX) -o $@ $(obj) $(LDFLAGS)
