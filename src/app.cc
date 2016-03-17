@@ -28,6 +28,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include "pimg.h"
 
+#ifndef APP_NAME
+#define APP_NAME "alphaclock"
+#endif
+#ifndef PREFIX
+#define PREFIX "/usr/local"
+#endif
+
 static PSysParam ppflame;
 
 static ParticleSystem psys;
@@ -36,6 +43,7 @@ static Image *pimg, *time_image;
 static dtx_font *font;
 
 static unsigned long get_msec();
+static const char *find_data_file(const char *fname);
 
 
 bool app_init()
@@ -50,7 +58,7 @@ bool app_init()
 	memset(time_image->pixels, 0, time_image->width * time_image->height * 4);
 
 
-	if(!(font = dtx_open_font("data/urw_bookman.type1", 55))) {
+	if(!(font = dtx_open_font(find_data_file("urw_bookman.type1"), 55))) {
 		fprintf(stderr, "failed to load font\n");
 		return false;
 	}
@@ -114,7 +122,6 @@ void app_draw()
 	dtx_string(buf);
 	//dtx_string("88:88.88");
 	psys.reset_spawnmap();
-	time_image->save("time.ppm");
 
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -167,4 +174,26 @@ static unsigned long get_msec()
 	}
 
 	return (tv.tv_sec - tv0.tv_sec) * 1000 + (tv.tv_usec - tv0.tv_usec) / 1000;
+}
+
+static const char *find_data_file(const char *fname)
+{
+	static char buf[2048];
+	const char *dirs[] = {
+		PREFIX "/share/" APP_NAME,
+		"/usr/local/share/" APP_NAME,
+		"/usr/share/" APP_NAME,
+		"data",
+		0
+	};
+
+	for(int i=0; dirs[i]; i++) {
+		FILE *fp;
+		sprintf(buf, "%s/%s", dirs[i], fname);
+		if((fp = fopen(buf, "rb"))) {
+			fclose(fp);
+			return buf;
+		}
+	}
+	return fname;
 }
