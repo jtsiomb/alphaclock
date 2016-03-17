@@ -17,6 +17,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <sys/select.h>
 #include <X11/Xlib.h>
@@ -30,16 +31,22 @@ static bool create_glwin(int xsz, int ysz);
 static bool handle_event(XEvent *ev);
 static void set_window_title(const char *title);
 static void set_no_decoration(Window win);
+static bool parse_args(int argc, char **argv);
 
-static int win_width, win_height;
+static int win_x = -1, win_y = -1;
+static int win_width = 800, win_height = 400;
 static bool quit, redraw_pending;
 static Display *dpy;
 static Window win;
 static GLXContext ctx;
 static Atom xa_wm_proto, xa_del_window;
+static unsigned int evmask;
 
 int main(int argc, char **argv)
 {
+	if(!parse_args(argc, argv)) {
+		return 1;
+	}
 	if(!(dpy = XOpenDisplay(0))) {
 		fprintf(stderr, "failed to connect to the X server.\n");
 		return 1;
@@ -47,9 +54,12 @@ int main(int argc, char **argv)
 	xa_wm_proto = XInternAtom(dpy, "WM_PROTOCOLS", False);
 	xa_del_window = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
 
-	if(!create_glwin(800, 400)) {
+	if(!create_glwin(win_width, win_height)) {
 		cleanup();
 		return 1;
+	}
+	if(win_x != -1) {
+		XMoveWindow(dpy, win, win_x, win_y);
 	}
 
 	if(!app_init()) {
@@ -109,7 +119,6 @@ static bool create_glwin(int xsz, int ysz)
 		GLX_GREEN_SIZE, 8,
 		GLX_BLUE_SIZE, 8,
 		GLX_ALPHA_SIZE, 8,
-		GLX_DEPTH_SIZE, 16,
 		None
 	};
 
@@ -177,7 +186,8 @@ static bool create_glwin(int xsz, int ysz)
 	}
 	XFree(vis_info);
 	XFree(fb_configs);
-	XSelectInput(dpy, win, ExposureMask | StructureNotifyMask | KeyPressMask | KeyReleaseMask);
+	evmask = ExposureMask | KeyPressMask | KeyReleaseMask | StructureNotifyMask | ButtonPressMask | Button1MotionMask;
+	XSelectInput(dpy, win, evmask);
 	XMapWindow(dpy, win);
 
 	XSetWMProtocols(dpy, win, &xa_del_window, 1);
@@ -192,9 +202,15 @@ static bool create_glwin(int xsz, int ysz)
 	return true;
 }
 
+static Bool match_motion_events(Display *dpy, XEvent *ev, XPointer arg)
+{
+	return ev->type == MotionNotify;
+}
+
 static bool handle_event(XEvent *ev)
 {
 	static bool mapped;
+	static int prev_x, prev_y;
 
 	switch(ev->type) {
 	case Expose:
@@ -214,6 +230,8 @@ static bool handle_event(XEvent *ev)
 		break;
 
 	case ConfigureNotify:
+		win_x = ev->xconfigure.x;
+		win_y = ev->xconfigure.y;
 		if(win_width != (int)ev->xconfigure.width || win_height != (int)ev->xconfigure.height) {
 			win_width = ev->xconfigure.width;
 			win_height = ev->xconfigure.height;
@@ -230,6 +248,48 @@ static bool handle_event(XEvent *ev)
 		if(ev->xclient.message_type == xa_wm_proto &&
 				(Atom)ev->xclient.data.l[0] == xa_del_window) {
 			return false;
+		}
+		break;
+
+	case ButtonPress:
+		if(ev->xbutton.button == Button1) {
+			XGrabPointer(dpy, win, True, ButtonReleaseMask | Button1MotionMask,
+					GrabModeAsync, GrabModeAsync, None, None, ev->xbutton.time);
+			prev_x = ev->xbutton.x_root;
+			prev_y = ev->xbutton.y_root;
+
+			evmask &= ~StructureNotifyMask;
+			evmask |= ButtonReleaseMask;
+			XSelectInput(dpy, win, evmask);
+		}
+		break;
+
+	case ButtonRelease:
+		if(ev->xbutton.button == Button1) {
+			evmask &= ~ButtonReleaseMask;
+			evmask |= StructureNotifyMask;
+			XSelectInput(dpy, win, evmask);
+			XUngrabPointer(dpy, ev->xbutton.time);
+		}
+		break;
+
+	case MotionNotify:
+		{
+			int x, y, dx = 0, dy = 0;
+
+			/* process all the pending motion events in one go */
+			do {
+				x = ev->xmotion.x_root;
+				y = ev->xmotion.y_root;
+				dx += x - prev_x;
+				dy += y - prev_y;
+				prev_x = x;
+				prev_y = y;
+			} while(XCheckIfEvent(dpy, ev, match_motion_events, 0));
+
+			win_x += dx;
+			win_y += dy;
+			XMoveWindow(dpy, win, win_x, win_y);
 		}
 		break;
 
@@ -268,4 +328,38 @@ static void set_no_decoration(Window win)
 		XChangeProperty(dpy, win, wm_hints, wm_hints, 32, PropModeReplace,
 				(unsigned char*)&hints, 4);
 	}
+}
+
+static bool parse_args(int argc, char **argv)
+{
+	int i;
+	for(i=1; i<argc; i++) {
+		if(argv[i][0] == '-') {
+			if(strcmp(argv[i], "-geometry") == 0) {
+				int flags = XParseGeometry(argv[++i], &win_x, &win_y,
+						(unsigned int*)&win_width, (unsigned int*)&win_height);
+				if(!flags || win_width == 0 || win_height == 0) {
+					fprintf(stderr, "invalid -geometry string\n");
+					return false;
+				}
+				if((flags & (XValue | YValue)) != (XValue | YValue)) {
+					win_x = -1;
+				}
+
+			} else if(strcmp(argv[i], "-help") == 0 || strcmp(argv[i], "-h") == 0) {
+				printf("Usage: %s [options]\n", argv[0]);
+				printf("options:\n");
+				printf(" -geometry [WxH][+X+Y]  set window size and/or position\n");
+				printf(" -help                  print usage and exit\n");
+				return 0;
+			} else {
+				fprintf(stderr, "invalid option: %s\n", argv[i]);
+				return false;
+			}
+		} else {
+			fprintf(stderr, "unexpected argument: %s\n", argv[i]);
+			return false;
+		}
+	}
+	return true;
 }
