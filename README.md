@@ -27,3 +27,22 @@ Dependencies
 In order to build and run alphaclock you will need the following libraries:
  - libdrawtext (release >= 0.3) http://github.com/jtsiomb/libdrawtext
  - freetype 2 http://www.freetype.org
+
+Installation
+------------
+First install the dependencies specified in the previous section. For instance
+in debian-based systems you would do the following (assuming libdrawtext isn't
+available in the repository):
+```
+sudo apt-get install libfreetype6-dev
+git clone http://github.com/jtsiomb/libdrawtext
+cd libdrawtext
+./configure
+make
+sudo make install
+```
+
+Then just change into the alphaclock directory, and type `make`, followed by
+`make install` as root. This will install alphaclock by default in `/usr/local`;
+if you wish to change the installation prefix then modify the `PREFIX` line at
+the top of the makefile before compiling and installing.
