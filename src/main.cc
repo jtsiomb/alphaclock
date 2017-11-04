@@ -1,6 +1,6 @@
 /*
 alphaclock - transparent desktop clock
-Copyright (C) 2016  John Tsiombikas <nuclear@member.fsf.org>
+Copyright (C) 2016-2017  John Tsiombikas <nuclear@member.fsf.org>
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -26,20 +26,26 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <GL/glx.h>
 #include "app.h"
 
+#define _NET_WM_STATE_REMOVE	0
+#define _NET_WM_STATE_ADD		1
+#define _NET_WM_STATE_TOGGLE	2
+
 static void cleanup();
 static bool create_glwin(int xsz, int ysz);
 static bool handle_event(XEvent *ev);
 static void set_window_title(const char *title);
 static void set_no_decoration(Window win);
+static void set_fullscreen_state(Window win, int op);
 static bool parse_args(int argc, char **argv);
 
 static int win_x = -1, win_y = -1;
 static int win_width = 800, win_height = 400;
-static bool quit, redraw_pending;
+static bool fullscreen, quit, redraw_pending;
 static Display *dpy;
-static Window win;
+static Window win, root_win;
 static GLXContext ctx;
 static Atom xa_wm_proto, xa_del_window;
+static Atom xa_net_wm_state, xa_net_wm_state_fullscr;
 static unsigned int evmask;
 
 int main(int argc, char **argv)
@@ -53,6 +59,8 @@ int main(int argc, char **argv)
 	}
 	xa_wm_proto = XInternAtom(dpy, "WM_PROTOCOLS", False);
 	xa_del_window = XInternAtom(dpy, "WM_DELETE_WINDOW", False);
+	xa_net_wm_state = XInternAtom(dpy, "_NET_WM_STATE", False);
+	xa_net_wm_state_fullscr = XInternAtom(dpy, "_NET_WM_STATE_FULLSCREEN", False);
 
 	if(!create_glwin(win_width, win_height)) {
 		cleanup();
@@ -97,6 +105,21 @@ void app_redisplay()
 	redraw_pending = true;
 }
 
+void app_fullscreen()
+{
+	set_fullscreen_state(win, _NET_WM_STATE_ADD);
+}
+
+void app_windowed()
+{
+	set_fullscreen_state(win, _NET_WM_STATE_REMOVE);
+}
+
+void app_fullscreen_toggle()
+{
+	set_fullscreen_state(win, _NET_WM_STATE_TOGGLE);
+}
+
 static void cleanup()
 {
 	if(!dpy) return;
@@ -123,7 +146,7 @@ static bool create_glwin(int xsz, int ysz)
 	};
 
 	int scr = DefaultScreen(dpy);
-	Window root_win = RootWindow(dpy, scr);
+	root_win = RootWindow(dpy, scr);
 
 	GLXFBConfig *fb_configs, *fbcfg = 0;
 	XVisualInfo *vis_info;
@@ -192,7 +215,11 @@ static bool create_glwin(int xsz, int ysz)
 
 	XSetWMProtocols(dpy, win, &xa_del_window, 1);
 	set_window_title("alphaclock");
-	set_no_decoration(win);
+	if(fullscreen) {
+		set_fullscreen_state(win, _NET_WM_STATE_ADD);
+	} else {
+		set_no_decoration(win);
+	}
 
 	glXMakeCurrent(dpy, win, ctx);
 
@@ -330,6 +357,25 @@ static void set_no_decoration(Window win)
 	}
 }
 
+static void set_fullscreen_state(Window win, int op)
+{
+	XEvent ev;
+	long evmask = SubstructureRedirectMask | SubstructureNotifyMask;
+
+	memset(&ev, 0, sizeof ev);
+
+	ev.type = ClientMessage;
+	ev.xclient.window = win;
+	ev.xclient.message_type = xa_net_wm_state;
+	ev.xclient.format = 32;
+	ev.xclient.data.l[0] = op;
+	ev.xclient.data.l[1] = xa_net_wm_state_fullscr;
+	ev.xclient.data.l[2] = 0;
+	ev.xclient.data.l[3] = 1;
+
+	XSendEvent(dpy, root_win, 0, evmask, &ev);
+}
+
 static bool parse_args(int argc, char **argv)
 {
 	int i;
@@ -345,6 +391,9 @@ static bool parse_args(int argc, char **argv)
 				if((flags & (XValue | YValue)) != (XValue | YValue)) {
 					win_x = -1;
 				}
+
+			} else if(strcmp(argv[i], "-fs") == 0) {
+				fullscreen = true;
 
 			} else if(strcmp(argv[i], "-help") == 0 || strcmp(argv[i], "-h") == 0) {
 				printf("Usage: %s [options]\n", argv[0]);

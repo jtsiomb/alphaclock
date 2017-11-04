@@ -1,6 +1,6 @@
 /*
 alphaclock - transparent desktop clock
-Copyright (C) 2016  John Tsiombikas <nuclear@member.fsf.org>
+Copyright (C) 2016-2017  John Tsiombikas <nuclear@member.fsf.org>
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
@@ -150,6 +150,11 @@ void app_keyboard(int key, bool press)
 		switch(key) {
 		case 27:
 			exit(0);
+
+		case 'f':
+		case 'F':
+			app_fullscreen_toggle();
+			break;
 		}
 	}
 }

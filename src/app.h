@@ -28,5 +28,8 @@ void app_mouse_motion(int x, int y);
 
 void app_quit();
 void app_redisplay();
+void app_fullscreen();
+void app_windowed();
+void app_fullscreen_toggle();
 
 #endif	/* APP_H_ */
